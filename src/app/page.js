@@ -1,113 +1,143 @@
-import Image from 'next/image'
+"use client";
+
+import AddFolderModal from "@/components/modals/AddFolderModal";
+import RecentFiles from "@/components/recent-files";
+import RecentFolders from "@/components/recent-folders";
+import SearchBar from "@/components/searchbar";
+import { db } from "@/firebase/config";
+import { useStore } from "@/store/store";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+} from "firebase/firestore";
+import { signOut, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function Home() {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [openAddFolderModal, setOpenAddFolderModal] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [folders, setFolders] = useState([]);
+  const [recentFiles, setRecentFiles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [originalFolderList, setOriginalFolderList] = useState([]);
+  const folderCollection = collection(db, "folders");
+  const fileCollection = collection(db, "files");
+  const docId = Date.now().toString();
+  const setTotalFileSize = useStore((state) => state.setTotalFileSize);
+
+  useEffect(() => {
+    if (!session) {
+      return router.push("/signup");
+    }
+    _getAllFolders();
+    _getRecentfiles();
+  }, [session]);
+
+  const _createFolder = async () => {
+    try {
+      await addDoc(folderCollection, {
+        folderName,
+        id: docId,
+        createdBy: session?.user?.email,
+        starred: false,
+      });
+      setOpenAddFolderModal(false);
+      _getAllFolders();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const _getAllFolders = async () => {
+    const queryMessages = query(
+      folderCollection,
+      where("createdBy", "==", session?.user?.email)
+    );
+    const unsubscribe = onSnapshot(queryMessages, (snapshot) => {
+      let folders = [];
+      snapshot.forEach((doc) => {
+        folders.push({ ...doc.data(), id: doc.id });
+      });
+      setFolders(folders);
+      setOriginalFolderList(folders);
+    });
+
+    return () => unsubscribe();
+  };
+
+  const _getRecentfiles = async () => {
+    const queryMessages = query(
+      fileCollection,
+      where("createdBy", "==", session?.user?.email)
+    );
+    const unsubscribe = onSnapshot(queryMessages, (snapshot) => {
+      let files = [];
+      snapshot.forEach((doc) => {
+        files.push({ ...doc.data(), id: doc.id });
+      });
+      setRecentFiles(files.slice(0, 4));
+      _renderFileSize(files);
+    });
+
+    return () => unsubscribe();
+  };
+
+  const _renderFileSize = (data) => {
+    const totalFileSizeInKB = data.reduce((accumulator, item) => {
+      const fileSizeInKB = item.fileSize / 1024; // Convert fileSize to KB
+      return accumulator + fileSizeInKB;
+    }, 0);
+
+    let formattedTotal = totalFileSizeInKB.toFixed(1) + " KB";
+
+    if (totalFileSizeInKB >= 1024) {
+      // If the total exceeds 1024 KB (1 MB), convert to MB
+      const totalFileSizeInMB = totalFileSizeInKB / 1024;
+      formattedTotal = totalFileSizeInMB.toFixed(1) + " MB";
+    }
+
+    console.log(formattedTotal); // This will give you the total size with the appropriate unit (KB or MB)
+    setTotalFileSize(formattedTotal); // You can return the formattedTotal if needed
+  };
+
+  //Search Folders
+  const _searchFolder = (value) => {
+    if (value !== "") {
+      const filteredFolders = folders.filter((item) =>
+        item.folderName.toString().toLowerCase().includes(value.toLowerCase())
+      );
+      setFolders(filteredFolders);
+    } else {
+      setFolders(originalFolderList);
+    }
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
+    <div className="h-full flex flex-col gap-5">
+      {openAddFolderModal ? (
+        <AddFolderModal
+          setFolderName={setFolderName}
+          setOpenAddFolderModal={setOpenAddFolderModal}
+          _createFolder={_createFolder}
         />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore the Next.js 13 playground.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
+      ) : null}
+      <SearchBar _searchFolder={_searchFolder} />
+      <RecentFolders
+        loading={loading}
+        folders={folders}
+        setOpenAddFolderModal={setOpenAddFolderModal}
+      />
+      <RecentFiles recentFiles={recentFiles} />
+    </div>
+  );
 }
