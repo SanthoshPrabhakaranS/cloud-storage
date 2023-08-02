@@ -48,7 +48,7 @@ const StarredFolders = ({ setOpenAddFolderModal, starredFolders, loading }) => {
                 );
               }
               return (
-                <h1 className="font-medium text-center w-full absolute">
+                <h1 key={item.id} className="font-medium text-center w-full absolute">
                   No Starred Folders
                 </h1>
               );
